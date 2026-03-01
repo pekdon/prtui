@@ -20,7 +20,7 @@ pr_table_creation_query = """
 
 comments_table_creation_query = """
     CREATE TABLE IF NOT EXISTS COMMENTS (
-        id TEXT PRIMARY KEY,
+        id INT PRIMARY KEY,
         pr_number INT,
         pr_repo CHAR(25),
         user CHAR(25),
@@ -90,6 +90,18 @@ def comment_insert(cursor, comment):
          comment.get("in_reply_to_id"), comment["body"],
          comment.get("type", "comment"))
     )
+
+def pr_get_updated_at(cursor):
+    """Return {(repo, number): updated_at} for all PRs."""
+    cursor.execute("SELECT repo, number, updated_at FROM PRS")
+    return {(r["repo"], r["number"]): r["updated_at"] for r in cursor.fetchall()}
+
+def pr_delete(cursor, repo, number):
+    """Delete a PR and its comments."""
+    cursor.execute("DELETE FROM COMMENTS WHERE pr_repo = ? AND pr_number = ?",
+                   (repo, number))
+    cursor.execute("DELETE FROM PRS WHERE repo = ? AND number = ?",
+                   (repo, number))
 
 def get_comments(cursor, pr_number, pr_repo):
     cursor.execute(

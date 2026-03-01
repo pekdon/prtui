@@ -241,42 +241,69 @@ def _fetch_pr_details(pr):
     return pr, comments
 
 
-def fetch_and_store(on_progress=None):
-    """Fetch PRs and comments from GitHub and store in the database."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+def poll_for_updates(on_progress=None):
+    """Check for new/changed PRs and update the database incrementally.
 
+    Runs the search queries, compares updated_at against the DB,
+    re-fetches details only for changed PRs, and removes stale ones.
+    Returns True if anything changed.
+    """
     def progress(msg):
         if on_progress:
             on_progress(msg)
 
-    progress("Fetching your PRs...")
     global _api_calls
     _api_calls = 0
+
+    progress("Polling PRs...")
     prs = get_my_prs()
-    progress("Fetching review PRs...")
     reviewer_prs, requested_prs = get_review_prs()
     prs.extend(reviewer_prs)
     prs.extend(requested_prs)
 
+    with prdb.connection() as cursor:
+        prdb.create_pr_table(cursor)
+        prdb.create_comments_table(cursor)
+        old = prdb.pr_get_updated_at(cursor)
+
+    current_keys = set()
+    changed = []
+    for pr in prs:
+        key = (pr["repo"], pr["number"])
+        current_keys.add(key)
+        old_ts = old.get(key)
+        if old_ts is None or pr["updated_at"] > old_ts:
+            changed.append(pr)
+
+    stale = set(old.keys()) - current_keys
+
+    if not changed and not stale:
+        progress(f"No changes ({_api_calls} API calls)")
+        return False
+
+    # Fetch details only for changed PRs
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     comments = []
     done = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(_fetch_pr_details, pr): pr for pr in prs}
+        futures = {pool.submit(_fetch_pr_details, pr): pr for pr in changed}
         for future in as_completed(futures):
             pr, pr_comments = future.result()
             comments.extend(pr_comments)
             done += 1
-            progress(f"Fetching comments ({done}/{len(prs)})...")
+            progress(f"Updating ({done}/{len(changed)})...")
 
     with prdb.connection() as cursor:
-        prdb.create_pr_table(cursor)
-        prdb.create_comments_table(cursor)
-        for pr in prs:
+        for pr in changed:
             prdb.pr_insert(cursor, pr)
         for comment in comments:
             prdb.comment_insert(cursor, comment)
+        for repo, number in stale:
+            prdb.pr_delete(cursor, repo, number)
 
-    progress(f"Done ({_api_calls} API calls)")
+    progress(f"Updated {len(changed)}, removed {len(stale)} ({_api_calls} API calls)")
+    return True
+
 
 if __name__ == "__main__":
-    fetch_and_store()
+    poll_for_updates(on_progress=print)

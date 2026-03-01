@@ -14,6 +14,7 @@ from navigation import NavigationMixin
 import comments
 
 STATE_COL = 0
+POLL_INTERVAL = 120
 
 STATE_DISPLAY = {
     "unread": "● new",
@@ -31,8 +32,8 @@ class GhMail(NavigationMixin, App):
         Binding("r", "mark_read", "Mark Read"),
         Binding("tab", "focus_next_table", "Next Table", show=False, priority=True),
         Binding("shift+tab", "focus_prev_table", "Prev Table", show=False, priority=True),
-        Binding("enter", "open_pr", "Open in Browser", priority=True),
-        Binding("space", "toggle_comments", "Comments", priority=True),
+        Binding("o", "open_pr", "Open in Browser"),
+        Binding("enter", "toggle_comments", "Comments", priority=True),
     ]
 
     def compose(self) -> ComposeResult:
@@ -49,10 +50,22 @@ class GhMail(NavigationMixin, App):
 
     def on_mount(self) -> None:
         threading.Thread(target=self._fetch_worker, daemon=True).start()
+        self.set_interval(POLL_INTERVAL, self._poll_updates)
 
     def _fetch_worker(self) -> None:
+        """Fetch/update PRs and refresh tables."""
         try:
-            self._ensure_data()
+            show_loading = not store.has_data()
+            if show_loading:
+                self.call_from_thread(self._show_loading, True)
+            try:
+                ghapi.poll_for_updates(
+                    on_progress=lambda msg: self.call_from_thread(
+                        self.notify, msg)
+                )
+            finally:
+                if show_loading:
+                    self.call_from_thread(self._show_loading, False)
             self.prs = {
                 "prs": store.get_pull_requests("mine"),
                 "reviewer": store.get_pull_requests("reviewer"),
@@ -63,22 +76,41 @@ class GhMail(NavigationMixin, App):
             self.call_from_thread(self.notify, f"Fetch failed: {e}",
                                   severity="error")
 
-    def _ensure_data(self) -> None:
-        if store.has_data():
-            return
-        self.call_from_thread(self._show_loading, True)
-        try:
-            ghapi.fetch_and_store(
-                on_progress=lambda msg: self.call_from_thread(
-                    self.notify, msg)
-            )
-        finally:
-            self.call_from_thread(self._show_loading, False)
+    def _poll_updates(self) -> None:
+        """Periodically check for PR changes and refresh tables."""
+        def worker():
+            try:
+                changed = ghapi.poll_for_updates(
+                    on_progress=lambda msg: self.call_from_thread(
+                        self.notify, msg)
+                )
+                if changed:
+                    self.prs = {
+                        "prs": store.get_pull_requests("mine"),
+                        "reviewer": store.get_pull_requests("reviewer"),
+                        "requested": store.get_pull_requests("requested"),
+                    }
+                    self.call_from_thread(self._populate_tables, True)
+            except Exception as e:
+                self.call_from_thread(self.notify, f"Poll failed: {e}",
+                                      severity="error")
+        threading.Thread(target=worker, daemon=True).start()
 
     def _show_loading(self, show: bool) -> None:
         self.query_one(LoadingIndicator).display = show
 
-    def _populate_tables(self) -> None:
+    def _populate_tables(self, preserve_focus=False) -> None:
+        # Save focus state before clearing
+        focused_id = None
+        focused_row = 0
+        if preserve_focus:
+            try:
+                table = self._focused_table()
+                focused_id = table.id
+                focused_row = table.cursor_row
+            except Exception:
+                pass
+
         for table_id, prs in self.prs.items():
             table = self.query_one(f"#{table_id}", DataTable)
             table.clear(columns=True)
@@ -99,7 +131,16 @@ class GhMail(NavigationMixin, App):
                     ci,
                     key=f"{pr['repo']}#{pr['number']}",
                 )
-        self.query_one("#prs", DataTable).focus()
+
+        # Restore focus or default to first table
+        if focused_id:
+            table = self.query_one(f"#{focused_id}", DataTable)
+            row = min(focused_row, table.row_count - 1)
+            if row >= 0:
+                table.move_cursor(row=row)
+            table.focus()
+        else:
+            self.query_one("#prs", DataTable).focus()
 
     @staticmethod
     def _get_pr_key(table):
