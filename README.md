@@ -35,7 +35,7 @@ jenkins-user:<jenkins-bot-username>
 4. Add to PATH
 Assuming zsh
 ```
-echo 'export PATH="$PATH:/Users/jonathan/scripts/prtui"' >> ~/.zshrc
+echo 'export PATH="$PATH:/path/to/prtui"' >> ~/.zshrc
 ```
 
 ## Usage
