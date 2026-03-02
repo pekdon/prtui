@@ -6,7 +6,23 @@ Shows your PRs, PRs you've reviewed, and PRs requested via team assignment. Disp
 
 ## Install
 
-1. Create a Python venv and source it:
+1. Ensure your Python has sqlite3 support:
+
+```bash
+python3 -c "import sqlite3"
+```
+
+If this fails, install the dev library and rebuild Python:
+
+```bash
+# Debian/Ubuntu
+sudo apt install libsqlite3-dev
+```
+
+If using pyenv, reinstall the Python version afterwards:
+`pyenv install --force <version>`
+
+2. Create a Python venv and source it:
 
 ```bash
 python3 -m venv .venv
@@ -16,13 +32,13 @@ source .venv/bin/activate
 NOTE: the prtui wrapper script is assuming the venv name .venv, update it
 if you want to use something else
 
-2. Install dependencies:
+3. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Create a `config` file in the project root:
+4. Create a `config` file in the project root:
 
 ```
 username:<github-username>
@@ -32,16 +48,20 @@ repos:<owner/repo>,<owner/repo2>
 jenkins-user:<jenkins-bot-username>
 ```
 
-4. Add to PATH
-Assuming zsh
+5. Add to PATH
+Assuming zsh, run this when standing in the root of the repo
 ```
-echo 'export PATH="$PATH:/path/to/prtui"' >> ~/.zshrc
+echo "export PATH=\"\$PATH:$(pwd)\"" >> ~/.zshrc
 ```
 
 ## Usage
 
 ```bash
 cd py && python prtui.py
+```
+or if added to PATH:
+```
+prtui
 ```
 
 ## Data

@@ -11,7 +11,7 @@ def read_config():
     with open(CONFIG_PATH) as fp:
         for line in fp:
             line = line.strip()
-            if not line:
+            if not line or line.startswith("#"):
                 continue
             key, value = line.split(":", 1)
             cfg[key] = value
