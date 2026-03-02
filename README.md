@@ -9,9 +9,12 @@ Shows your PRs, PRs you've reviewed, and PRs requested via team assignment. Disp
 1. Create a Python venv and source it:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 ```
+
+NOTE: the prtui wrapper script is assuming the venv name .venv, update it
+if you want to use something else
 
 2. Install dependencies:
 
@@ -27,6 +30,12 @@ team:<org>/<team-slug>
 token:<github-personal-access-token>
 repos:<owner/repo>,<owner/repo2>
 jenkins-user:<jenkins-bot-username>
+```
+
+4. Add to PATH
+Assuming zsh
+```
+echo 'export PATH="$PATH:/Users/jonathan/scripts/prtui"' >> ~/.zshrc
 ```
 
 ## Usage

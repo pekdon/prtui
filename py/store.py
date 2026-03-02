@@ -79,4 +79,5 @@ def get_comments(repo, number):
             threads[root_id] = []
             order.append(root_id)
         threads[root_id].append(c)
-    return [threads[root_id] for root_id in order]
+    # Threads ordered latest-first, but comments within each thread oldest-first
+    return [list(reversed(threads[root_id])) for root_id in order]

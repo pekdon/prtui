@@ -16,15 +16,11 @@ REPOS = _cfg["repos"]
 USER = _cfg["username"]
 TEAM = _cfg.get("team", "")
 
-_api_calls = 0
-
 
 def _paginate(url, params=None):
     """Paginate a GitHub API endpoint, yielding JSON items."""
-    global _api_calls
     params = params or {"per_page": 100}
     while url:
-        _api_calls += 1
         resp = requests.get(url, headers=HEADERS, params=params)
         resp.raise_for_status()
         data = resp.json()
@@ -33,12 +29,12 @@ def _paginate(url, params=None):
         params = {}
 
 
-def _search_prs(query, pr_type, repo):
+def _search_prs(query, pr_type):
     """Run a GitHub search and return matching PRs."""
     return [
         {
             "number": item["number"],
-            "repo": repo,
+            "repo": item["repository_url"].replace(f"{API}/repos/", ""),
             "author": item["user"]["login"],
             "title": item["title"],
             "url": item["html_url"],
@@ -49,70 +45,42 @@ def _search_prs(query, pr_type, repo):
     ]
 
 
-def get_my_prs():
-    """Fetch open PRs authored by me."""
-    prs = []
-    for repo in REPOS:
-        prs.extend(_search_prs(
-            f"repo:{repo} type:pr state:open author:{USER}", "mine", repo
-        ))
-    return prs
+def _repo_query():
+    """Build the repo: part of a search query."""
+    return " ".join(f"repo:{r}" for r in REPOS)
 
 
-def _get_requested_reviewers(pr_number, repo):
-    """Fetch requested reviewers for a PR (users and teams)."""
-    global _api_calls
-    _api_calls += 1
-    url = f"{API}/repos/{repo}/pulls/{pr_number}/requested_reviewers"
-    resp = requests.get(url, headers=HEADERS)
-    resp.raise_for_status()
-    data = resp.json()
-    users = {u["login"] for u in data.get("users", [])}
-    teams = {t["slug"] for t in data.get("teams", [])}
-    return users, teams
+def _fetch_all_prs():
+    """Fetch and classify all PRs in parallel.
 
-
-def _team_slug():
-    """Extract the slug (part after /) from the full team name."""
-    return TEAM.split("/", 1)[1] if "/" in TEAM else TEAM
-
-
-def get_review_prs():
-    """Fetch open PRs where I'm involved as a reviewer.
-
-    PRs where I've already reviewed go to 'reviewer'.
-    PRs where I'm requested get classified via the requested_reviewers
-    endpoint: user match → 'reviewer', team match → 'requested',
-    neither → ignored.
+    Runs the three search queries concurrently, then classifies
+    requested PRs via the requested_reviewers endpoint.
+    Returns (mine, reviewer, requested) lists.
     """
-    seen = set()
-    slug = _team_slug()
-    reviewer_prs = []
-    requested_prs = []
-
-    # PRs I've already reviewed — always "reviewer"
-    for repo in REPOS:
-        for pr in _search_prs(
-            f"repo:{repo} type:pr state:open reviewed-by:{USER}",
-            "reviewer", repo
-        ):
-            key = (pr["repo"], pr["number"])
-            if key not in seen:
-                seen.add(key)
-                reviewer_prs.append(pr)
-
-    # PRs where I'm requested — classify via endpoint in parallel
     from concurrent.futures import ThreadPoolExecutor
-    candidates = []
-    for repo in REPOS:
-        for pr in _search_prs(
-            f"repo:{repo} type:pr state:open review-requested:{USER}",
-            "reviewer", repo
-        ):
-            key = (pr["repo"], pr["number"])
-            if key not in seen:
-                seen.add(key)
-                candidates.append(pr)
+    rq = _repo_query()
+    queries = [
+        (f"{rq} type:pr state:open author:{USER}", "mine"),
+        (f"{rq} type:pr state:open reviewed-by:{USER} -author:{USER}", "reviewer"),
+        (f"{rq} type:pr state:open review-requested:{USER} -author:{USER}", "requested"),
+    ]
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(lambda q: _search_prs(*q), queries))
+
+    mine_prs = results[0]
+    reviewed_prs = results[1]
+    requested_raw = results[2]
+
+    # Deduplicate: reviewed-by may overlap with review-requested
+    seen = {(pr["repo"], pr["number"]) for pr in reviewed_prs}
+    candidates = [pr for pr in requested_raw
+                  if (pr["repo"], pr["number"]) not in seen]
+
+    # Classify requested PRs via endpoint
+    slug = _team_slug()
+    reviewer_prs = list(reviewed_prs)
+    requested_prs = []
 
     def _classify(pr):
         users, teams = _get_requested_reviewers(pr["number"], pr["repo"])
@@ -127,7 +95,23 @@ def get_review_prs():
                 pr["type"] = "requested"
                 requested_prs.append(pr)
 
-    return reviewer_prs, requested_prs
+    return mine_prs, reviewer_prs, requested_prs
+
+
+def _get_requested_reviewers(pr_number, repo):
+    """Fetch requested reviewers for a PR (users and teams)."""
+    url = f"{API}/repos/{repo}/pulls/{pr_number}/requested_reviewers"
+    resp = requests.get(url, headers=HEADERS)
+    resp.raise_for_status()
+    data = resp.json()
+    users = {u["login"] for u in data.get("users", [])}
+    teams = {t["slug"] for t in data.get("teams", [])}
+    return users, teams
+
+
+def _team_slug():
+    """Extract the slug (part after /) from the full team name."""
+    return TEAM.split("/", 1)[1] if "/" in TEAM else TEAM
 
 
 # Map GitHub review states to comment types for display.
@@ -214,7 +198,6 @@ def get_commits(pr_number, repo):
         sha = c["sha"]
         msg = c["commit"]["message"].split("\n", 1)[0]
         author = (c["author"] or {}).get("login", c["commit"]["author"]["name"])
-        print(f"  commit {sha[:8]} by {author}: {msg}")
         commits.append({
             "id": int(sha[:12], 16),
             "pr_number": pr_number,
@@ -252,14 +235,9 @@ def poll_for_updates(on_progress=None):
         if on_progress:
             on_progress(msg)
 
-    global _api_calls
-    _api_calls = 0
-
     progress("Polling PRs...")
-    prs = get_my_prs()
-    reviewer_prs, requested_prs = get_review_prs()
-    prs.extend(reviewer_prs)
-    prs.extend(requested_prs)
+    mine_prs, reviewer_prs, requested_prs = _fetch_all_prs()
+    prs = mine_prs + reviewer_prs + requested_prs
 
     with prdb.connection() as cursor:
         prdb.create_pr_table(cursor)
@@ -278,7 +256,7 @@ def poll_for_updates(on_progress=None):
     stale = set(old.keys()) - current_keys
 
     if not changed and not stale:
-        progress(f"No changes ({_api_calls} API calls)")
+        progress("No changes")
         return False
 
     # Fetch details only for changed PRs
@@ -301,7 +279,7 @@ def poll_for_updates(on_progress=None):
         for repo, number in stale:
             prdb.pr_delete(cursor, repo, number)
 
-    progress(f"Updated {len(changed)}, removed {len(stale)} ({_api_calls} API calls)")
+    progress(f"Updated {len(changed)}, removed {len(stale)}")
     return True
 
 

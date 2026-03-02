@@ -5,6 +5,7 @@ from textual.widgets import Header, Footer, DataTable, LoadingIndicator
 from textual.containers import Vertical, VerticalScroll
 from textual.binding import Binding
 from textual.coordinate import Coordinate
+from rich.text import Text
 import threading
 import webbrowser
 from datetime import datetime, timezone
@@ -21,6 +22,26 @@ STATE_DISPLAY = {
     "read": "  read",
 }
 
+class CommentsPanel(VerticalScroll):
+    """Scrollable panel for PR comments with its own key bindings."""
+    BINDINGS = [
+        Binding("q", "quit", "Quit"),
+        Binding("escape", "close_comments", "Close", priority=True),
+        Binding("tab", "focus_next_table", "Next Thread", show=True),
+        Binding("shift+tab", "focus_prev_table", "Prev Thread", show=True),
+        # Shadow app bindings that don't apply here
+        Binding("r", "noop", show=False),
+        Binding("o", "noop", show=False),
+        Binding("c", "noop", show=False),
+    ]
+
+    def action_close_comments(self) -> None:
+        self.app.action_close_comments()
+
+    def action_noop(self) -> None:
+        pass
+
+
 class GhMail(NavigationMixin, App):
     CSS_PATH = "prtui.tcss"
 
@@ -30,31 +51,34 @@ class GhMail(NavigationMixin, App):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("r", "mark_read", "Mark Read"),
-        Binding("tab", "focus_next_table", "Next Table", show=False, priority=True),
-        Binding("shift+tab", "focus_prev_table", "Prev Table", show=False, priority=True),
         Binding("o", "open_pr", "Open in Browser"),
-        Binding("enter", "open_comments", "Comments", priority=True),
-        Binding("escape", "close_comments", "Close", show=False, priority=True),
+        Binding("c", "open_comments", "Open Comments"),
+        Binding("tab", "focus_next_table", "Next Table", show=True),
+        Binding("shift+tab", "focus_prev_table", "Prev Table", show=True),
+
     ]
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield LoadingIndicator()
         yield Vertical(
-            DataTable(id="prs"),
-            DataTable(id="reviewer"),
-            DataTable(id="requested"),
+            Vertical(DataTable(id="prs"), id="group-prs", classes="table-group"),
+            Vertical(DataTable(id="reviewer"), id="group-reviewer", classes="table-group"),
+            Vertical(DataTable(id="requested"), id="group-requested", classes="table-group"),
             id="tables",
         )
-        yield VerticalScroll(id="comments")
+        yield CommentsPanel(id="comments")
         yield Footer()
 
     def on_mount(self) -> None:
+        self.query_one("#group-prs").border_title = "My PRs"
+        self.query_one("#group-reviewer").border_title = "Reviewing"
+        self.query_one("#group-requested").border_title = "Team Requested"
         threading.Thread(target=self._fetch_worker, daemon=True).start()
         self.set_interval(POLL_INTERVAL, self._poll_updates)
 
     def _fetch_worker(self) -> None:
-        """Fetch/update PRs and refresh tables."""
+        """Load DB, populate tables, then poll for updates."""
         try:
             if not store.has_data():
                 self.call_from_thread(self._show_loading, True)
@@ -71,25 +95,31 @@ class GhMail(NavigationMixin, App):
                 "requested": store.get_pull_requests("requested"),
             }
             self.call_from_thread(self._populate_tables)
+            # Immediate poll after initial render
+            self._do_poll(preserve_focus=True)
         except Exception as e:
             self.call_from_thread(self.notify, f"Fetch failed: {e}",
                                   severity="error")
+
+    def _do_poll(self, preserve_focus=False):
+        """Run a poll and refresh tables if anything changed."""
+        changed = ghapi.poll_for_updates(
+            on_progress=lambda msg: self.call_from_thread(
+                self.notify, msg)
+        )
+        if changed:
+            self.prs = {
+                "prs": store.get_pull_requests("mine"),
+                "reviewer": store.get_pull_requests("reviewer"),
+                "requested": store.get_pull_requests("requested"),
+            }
+            self.call_from_thread(self._populate_tables, preserve_focus)
 
     def _poll_updates(self) -> None:
         """Periodically check for PR changes and refresh tables."""
         def worker():
             try:
-                changed = ghapi.poll_for_updates(
-                    on_progress=lambda msg: self.call_from_thread(
-                        self.notify, msg)
-                )
-                if changed:
-                    self.prs = {
-                        "prs": store.get_pull_requests("mine"),
-                        "reviewer": store.get_pull_requests("reviewer"),
-                        "requested": store.get_pull_requests("requested"),
-                    }
-                    self.call_from_thread(self._populate_tables, True)
+                self._do_poll(preserve_focus=True)
             except Exception as e:
                 self.call_from_thread(self.notify, f"Poll failed: {e}",
                                       severity="error")
@@ -121,7 +151,8 @@ class GhMail(NavigationMixin, App):
                 approvals = str(pr["approval_count"]) if pr["approval_count"] else ""
                 if pr.get("my_approved"):
                     approvals = f"✓ {approvals}".strip()
-                table.add_row(
+                style = "dim" if pr["state"] == "read" else ""
+                cells = [
                     STATE_DISPLAY[pr["state"]],
                     str(pr["number"]),
                     pr["repo"],
@@ -129,6 +160,9 @@ class GhMail(NavigationMixin, App):
                     pr["author"],
                     approvals,
                     ci,
+                ]
+                table.add_row(
+                    *(Text(c, style=style) for c in cells),
                     key=f"{pr['repo']}#{pr['number']}",
                 )
 
@@ -143,35 +177,48 @@ class GhMail(NavigationMixin, App):
             self.query_one("#prs", DataTable).focus()
 
     @staticmethod
-    def _get_pr_key(table):
-        """Return (repo, number) from the cursor row's key."""
-        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+    def _get_pr_key(table, row):
+        """Return (repo, number) from a specific row's key."""
+        row_key, _ = table.coordinate_to_cell_key(Coordinate(row, 0))
         return row_key.value.rsplit("#", 1)
 
     def action_mark_read(self) -> None:
         table = self._focused_table()
-        row = table.cursor_row
-        prs = self.prs.get(table.id or "", [])
-        repo, number = self._get_pr_key(table)
-        store.mark_read(repo, number)
-        prs[row]["state"] = "read"
-        prs[row]["read_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        table.update_cell_at(Coordinate(row, STATE_COL), STATE_DISPLAY["read"])
-        panel = self.query_one("#comments", VerticalScroll)
+        self._mark_row_read(table, table.cursor_row)
+        panel = self.query_one("#comments", CommentsPanel)
         if panel.display:
-            comments.populate_panel(panel, repo, number, prs[row]["read_at"])
+            prs = self.prs.get(table.id or "", [])
+            repo, number = self._get_pr_key(table, table.cursor_row)
+            comments.populate_panel(panel, repo, number, prs[table.cursor_row]["read_at"])
 
     def _selected_pr_key(self):
         """Return (repo, number) for the currently selected PR row."""
         table = self._focused_table()
         if table.row_count == 0:
             return None
-        return self._get_pr_key(table)
+        return self._get_pr_key(table, table.cursor_row)
 
     def _hide_comments(self) -> None:
-        panel = self.query_one("#comments", VerticalScroll)
+        panel = self.query_one("#comments", CommentsPanel)
         panel.display = False
-        self.query_one(f"#{self._comments_source}", DataTable).focus()
+        table = self.query_one(f"#{self._comments_source}", DataTable)
+        self._mark_row_read(table, self._comments_row)
+        table.focus()
+
+    def _mark_row_read(self, table, row) -> None:
+        """Mark a specific row's PR as read, updating DB and UI."""
+        prs = self.prs.get(table.id or "", [])
+        if row >= len(prs) or prs[row]["state"] == "read":
+            return
+        repo, number = self._get_pr_key(table, row)
+        store.mark_read(repo, number)
+        prs[row]["state"] = "read"
+        prs[row]["read_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        table.update_cell_at(Coordinate(row, STATE_COL), STATE_DISPLAY["read"])
+        # Dim the entire row
+        for col in range(len(table.columns)):
+            val = table.get_cell_at(Coordinate(row, col))
+            table.update_cell_at(Coordinate(row, col), Text(str(val), style="dim"))
 
     def _show_comments(self) -> None:
         key = self._selected_pr_key()
@@ -179,20 +226,24 @@ class GhMail(NavigationMixin, App):
             return
         repo, number = key
         self._comments_source = self._focused_table().id or "prs"
+        self._comments_row = self._focused_table().cursor_row
         table = self._focused_table()
         prs = self.prs.get(table.id or "", [])
         read_at = prs[table.cursor_row].get("read_at")
-        panel = self.query_one("#comments", VerticalScroll)
+        panel = self.query_one("#comments", CommentsPanel)
         comments.populate_panel(panel, repo, number, read_at)
+        title = prs[table.cursor_row].get("title", "")
+        panel.border_title = f"#{number} {title}"
+        panel.border_subtitle = "ESC to close"
         panel.display = True
         panel.focus()
 
     def action_open_comments(self) -> None:
-        if not self.query_one("#comments", VerticalScroll).display:
+        if not self.query_one("#comments", CommentsPanel).display:
             self._show_comments()
 
     def action_close_comments(self) -> None:
-        if self.query_one("#comments", VerticalScroll).display:
+        if self.query_one("#comments", CommentsPanel).display:
             self._hide_comments()
 
     def action_open_pr(self) -> None:

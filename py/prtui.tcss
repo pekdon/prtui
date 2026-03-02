@@ -8,6 +8,14 @@ DataTable:focus > .datatable--cursor {
     background: $accent;
     color: $text;
 }
+.table-group {
+    height: 1fr;
+    border: round $accent;
+    padding: 0 1;
+}
+.table-group:can-focus {
+    border: round $accent-lighten-2;
+}
 LoadingIndicator {
     display: none;
 }
@@ -19,6 +27,7 @@ LoadingIndicator {
     margin: 3 3 3 3;
     background: $surface;
     border: round $accent;
+    border-subtitle-align: right;
     padding: 1 2;
 }
 .review-approval {
@@ -35,6 +44,9 @@ LoadingIndicator {
 }
 .comment-thread {
     background: #2d2d3d;
+}
+CollapsibleTitle:focus {
+    background: $accent;
 }
 .commit {
     background: darkblue;

@@ -1,8 +1,9 @@
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+import config
 
-DB_PATH = Path('/tmp/prtui.db')
+DB_PATH = Path(config.read_config().get('db-path', '/tmp/prtui.db'))
 
 pr_table_creation_query = """
     CREATE TABLE IF NOT EXISTS PRS (
@@ -74,7 +75,8 @@ def pr_get_all(cursor, type):
 
 def pr_mark_read(cursor, repo, number):
     cursor.execute(
-        "UPDATE PRS SET read_at = datetime('now') WHERE repo = ? AND number = ?",
+        "UPDATE PRS SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+        " WHERE repo = ? AND number = ?",
         (repo, number)
     )
 
