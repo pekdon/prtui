@@ -8,6 +8,8 @@ _cfg = config.read_config()
 JENKINS_USER = _cfg["jenkins-user"]
 USER = _cfg["username"]
 _CI_URL_PATTERN = _cfg.get("ci-url-pattern", "")
+_TICKET_PATTERN = _cfg.get("ticket-pattern", "")
+_TICKET_URL = _cfg.get("ticket-url", "")
 
 
 def has_data():
@@ -53,6 +55,16 @@ def mark_read(repo, number):
 def get_pr_url(repo, number):
     """Return the GitHub URL for a PR."""
     return f"https://github.com/{repo}/pull/{number}"
+
+
+def get_ticket_url(title):
+    """Extract a ticket ID from the PR title and return the ticket URL."""
+    if not _TICKET_PATTERN or not _TICKET_URL:
+        return None
+    match = re.search(_TICKET_PATTERN, title, re.IGNORECASE)
+    if not match:
+        return None
+    return _TICKET_URL.format(ticket=match.group(0))
 
 
 def get_ci_url(repo, number):

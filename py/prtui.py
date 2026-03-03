@@ -33,6 +33,7 @@ class CommentsPanel(VerticalScroll):
         Binding("r", "noop", show=False),
         Binding("o", "noop", show=False),
         Binding("j", "noop", show=False),
+        Binding("t", "noop", show=False),
         Binding("c", "close_comments", show=False),
     ]
 
@@ -54,6 +55,7 @@ class GhMail(NavigationMixin, App):
         Binding("r", "mark_read", "Mark Read"),
         Binding("o", "open_pr", "Open in Browser"),
         Binding("j", "open_ci", "Open CI"),
+        Binding("t", "open_ticket", "Open Ticket"),
         Binding("c", "open_comments", "Open Comments"),
         Binding("tab", "focus_next_table", "Next Table", show=True),
         Binding("shift+tab", "focus_prev_table", "Prev Table", show=True),
@@ -266,6 +268,18 @@ class GhMail(NavigationMixin, App):
             webbrowser.open(url)
         else:
             self.notify("No CI link found", severity="warning")
+
+    def action_open_ticket(self) -> None:
+        table = self._focused_table()
+        if table.row_count == 0:
+            return
+        prs = self.prs.get(table.id or "", [])
+        title = prs[table.cursor_row].get("title", "")
+        url = store.get_ticket_url(title)
+        if url:
+            webbrowser.open(url)
+        else:
+            self.notify("No ticket found in title", severity="warning")
 
 
 if __name__ == "__main__":
