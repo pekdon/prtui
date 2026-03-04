@@ -13,11 +13,12 @@ import webbrowser
 from datetime import datetime, timezone
 import store
 import ghapi
+import config
 from navigation import NavigationMixin
 import comments
 
 STATE_COL = 0
-POLL_INTERVAL = 120
+POLL_INTERVAL = int(config.read_config().get("poll-interval", 120))
 
 STATE_DISPLAY = {
     "unread": "● new",
