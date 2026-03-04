@@ -2,9 +2,11 @@
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, DataTable, LoadingIndicator
-from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Label, Button
+from textual.containers import Vertical, VerticalScroll, Grid
 from textual.binding import Binding
 from textual.coordinate import Coordinate
+from textual.screen import ModalScreen
 from rich.text import Text
 import threading
 import webbrowser
@@ -25,14 +27,16 @@ STATE_DISPLAY = {
 class CommentsPanel(VerticalScroll):
     """Scrollable panel for PR comments with its own key bindings."""
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
+        Binding("q", "close_comments", "Close"),
         Binding("escape", "close_comments", "Close", priority=True),
-        Binding("tab", "focus_next_table", "Next Thread", show=True),
-        Binding("shift+tab", "focus_prev_table", "Prev Thread", show=True),
+        Binding("j", "focus_next_table", show=False),
+        Binding("k", "focus_prev_table", show=False),
+        Binding("down", "focus_next_table", show=False, priority=True),
+        Binding("up", "focus_prev_table", show=False, priority=True),
         # Shadow app bindings that don't apply here
         Binding("r", "noop", show=False),
         Binding("o", "noop", show=False),
-        Binding("j", "noop", show=False),
+        Binding("b", "noop", show=False),
         Binding("t", "noop", show=False),
         Binding("c", "close_comments", show=False),
     ]
@@ -40,9 +44,31 @@ class CommentsPanel(VerticalScroll):
     def action_close_comments(self) -> None:
         self.app.action_close_comments()
 
+    def action_focus_next_table(self) -> None:
+        self.app.action_focus_next_table()
+
+    def action_focus_prev_table(self) -> None:
+        self.app.action_focus_prev_table()
+
     def action_noop(self) -> None:
         pass
 
+class QuitScreen(ModalScreen[bool]):
+    """Screen with a dialog to quit."""
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label("Are you sure you want to quit?", id="question"),
+            Button("Quit", variant="error", id="quit"),
+            Button("Cancel", variant="primary", id="cancel"),
+            id="dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "quit":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
 
 class GhMail(NavigationMixin, App):
     CSS_PATH = "prtui.tcss"
@@ -53,12 +79,14 @@ class GhMail(NavigationMixin, App):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("r", "mark_read", "Mark Read"),
-        Binding("o", "open_pr", "Open in Browser"),
-        Binding("j", "open_ci", "Open CI"),
+        Binding("o", "open_pr", "Open PR"),
+        Binding("b", "open_ci", "Open CI"),
         Binding("t", "open_ticket", "Open Ticket"),
         Binding("c", "open_comments", "Open Comments"),
         Binding("tab", "focus_next_table", "Next Table", show=True),
         Binding("shift+tab", "focus_prev_table", "Prev Table", show=True),
+        Binding("j", "cursor_down", show=False),
+        Binding("k", "cursor_up", show=False),
     ]
 
     def compose(self) -> ComposeResult:
@@ -187,6 +215,12 @@ class GhMail(NavigationMixin, App):
         row_key, _ = table.coordinate_to_cell_key(Coordinate(row, 0))
         return row_key.value.rsplit("#", 1)
 
+    def action_cursor_down(self) -> None:
+        self._focused_table().action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        self._focused_table().action_cursor_up()
+
     def action_mark_read(self) -> None:
         table = self._focused_table()
         self._mark_row_read(table, table.cursor_row)
@@ -281,6 +315,12 @@ class GhMail(NavigationMixin, App):
         else:
             self.notify("No ticket found in title", severity="warning")
 
+    def _handle_quit(self, confirmed: bool) -> None:
+        if confirmed:
+            self.exit()
+
+    def action_quit(self):
+        self.push_screen(QuitScreen(), callback=self._handle_quit)
 
 if __name__ == "__main__":
     GhMail().run()
