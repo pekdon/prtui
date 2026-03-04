@@ -1,5 +1,5 @@
 #!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
+DIR="$(dirname "$(readlink -f "$0")")"
 source "$DIR/.venv/bin/activate"
 cd "$DIR/py"
 python prtui.py "$@"
