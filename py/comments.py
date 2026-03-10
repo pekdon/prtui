@@ -10,13 +10,14 @@ def _fmt_time(iso):
     """Format an ISO timestamp to a relative date with clock time."""
     dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
     clock = dt.strftime("%H:%M")
-    days = (datetime.now(timezone.utc) - dt).days
-    if days == 0:
+    today = datetime.now(timezone.utc).astimezone().date()
+    delta = (today - dt.date()).days
+    if delta == 0:
         return f"today {clock}"
-    if days == 1:
+    if delta == 1:
         return f"yesterday {clock}"
-    if days < 7:
-        return f"{days} days ago {clock}"
+    if delta < 7:
+        return f"{delta} days ago {clock}"
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
