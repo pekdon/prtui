@@ -129,6 +129,7 @@ class GhMail(NavigationMixin, App):
         self.query_one("#group-prs").border_title = "My PRs"
         self.query_one("#group-reviewer").border_title = "Reviewing"
         self.query_one("#group-requested").border_title = "Team Requested"
+        self.watch(self.screen, "focused", self._on_screen_focused)
         threading.Thread(target=self._fetch_worker, daemon=True).start()
         self.set_interval(POLL_INTERVAL, self._poll_updates)
         theme_listener.start(
@@ -238,13 +239,29 @@ class GhMail(NavigationMixin, App):
                 table.move_cursor(row=row)
             table.focus()
         else:
-            self.query_one("#prs", DataTable).focus()
+            table = self.query_one("#prs", DataTable)
+            table.focus()
+        self.call_after_refresh(self._on_screen_focused, self.screen.focused)
 
     @staticmethod
     def _get_pr_key(table, row):
         """Return (repo, number) from a specific row's key."""
         row_key, _ = table.coordinate_to_cell_key(Coordinate(row, 0))
         return row_key.value.rsplit("#", 1)
+
+    def on_data_table_row_highlighted(self, event) -> None:
+        # Update subtitle as the cursor moves within a table.
+        table = event.data_table
+        prs = self.prs.get(table.id or "", [])
+        if event.cursor_row < len(prs):
+            self.sub_title = prs[event.cursor_row]["title"]
+
+    def _on_screen_focused(self, focused) -> None:
+        # Update subtitle when focus moves to a different table (tab key).
+        if isinstance(focused, DataTable) and hasattr(self, "prs"):
+            prs = self.prs.get(focused.id or "", [])
+            if focused.cursor_row < len(prs):
+                self.sub_title = prs[focused.cursor_row]["title"]
 
     def action_cursor_down(self) -> None:
         self._focused_table().action_cursor_down()
