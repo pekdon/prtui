@@ -15,6 +15,7 @@ pr_table_creation_query = """
         updated_at CHAR(30),
         read_at CHAR(30),
         approvals TEXT,
+        mergeable INT,
         PRIMARY KEY(repo, number)
     );
 """
@@ -53,23 +54,29 @@ def connection():
 
 def create_pr_table(cursor):
     cursor.execute(pr_table_creation_query)
+    # Migrate existing DBs that predate the mergeable column.
+    try:
+        cursor.execute("ALTER TABLE PRS ADD COLUMN mergeable INT")
+    except Exception:
+        pass
 
 def pr_insert(cursor, pr):
     cursor.execute(
-        "INSERT INTO PRS (number, repo, type, author, title, updated_at, approvals)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO PRS (number, repo, type, author, title, updated_at, approvals, mergeable)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT(repo, number) DO UPDATE SET"
         " type=excluded.type, author=excluded.author,"
         " title=excluded.title, updated_at=excluded.updated_at,"
-        " approvals=excluded.approvals",
+        " approvals=excluded.approvals, mergeable=excluded.mergeable",
         (pr["number"], pr["repo"], pr["type"], pr["author"],
-         pr["title"], pr["updated_at"], pr.get("approvals", ""))
+         pr["title"], pr["updated_at"], pr.get("approvals", ""),
+         pr.get("mergeable"))
     )
 
 def pr_get_all(cursor, type):
     cursor.execute(
         "SELECT number, repo, type, author, title, updated_at, read_at,"
-        " approvals FROM PRS WHERE type=?", (type,)
+        " approvals, mergeable FROM PRS WHERE type=?", (type,)
     )
     return [dict(r) for r in cursor.fetchall()]
 

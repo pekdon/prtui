@@ -208,12 +208,13 @@ class GhMail(NavigationMixin, App):
             table.clear(columns=True)
             table.cursor_type = "row"
             table.zebra_stripes = True
-            table.add_columns("", "#", "Repo", "Title", "Author", "App", "CI")
+            table.add_columns("", "#", "Repo", "Title", "Author", "App", "Mrg", "CI")
             for pr in prs:
                 ci = "✓" if pr["jenkins_approved"] else ""
                 approvals = str(pr["approval_count"]) if pr["approval_count"] else ""
                 if pr.get("my_approved"):
                     approvals = f"✓ {approvals}".strip()
+                mrg = {1: "✓", 0: "✗"}.get(pr.get("mergeable"), "")
                 style = "dim" if pr["state"] == "read" else ""
                 cells = [
                     STATE_DISPLAY[pr["state"]],
@@ -222,6 +223,7 @@ class GhMail(NavigationMixin, App):
                     pr["title"][:40] + ("…" if len(pr["title"]) > 40 else ""),
                     pr["author"][:15] + ("…" if len(pr["author"]) > 15 else ""),
                     approvals,
+                    mrg,
                     ci,
                 ]
                 table.add_row(

@@ -31,6 +31,7 @@ def get_pull_requests(type):
     if not prdb.db_exists():
         return []
     with prdb.connection() as cursor:
+        prdb.create_pr_table(cursor)  # ensures any pending migrations (e.g. new columns) are applied
         prs = []
         for pr in prdb.pr_get_all(cursor, type):
             names = [n for n in (pr["approvals"] or "").split(",") if n]

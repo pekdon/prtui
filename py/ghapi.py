@@ -216,13 +216,21 @@ def get_commits(pr_number, repo):
     return commits
 
 
+def _get_mergeable(pr_number, repo):
+    """Return mergeable status (True/False/None) from the individual PR endpoint."""
+    resp = requests.get(f"{API}/repos/{repo}/pulls/{pr_number}", headers=HEADERS)
+    resp.raise_for_status()
+    return resp.json().get("mergeable")
+
+
 def _fetch_pr_details(pr):
-    """Fetch comments and reviews for a single PR. Returns (pr, comments)."""
+    """Fetch comments, reviews, and mergeability for a single PR. Returns (pr, comments)."""
     comments = get_comments(pr["number"], pr["repo"])
     approvers, review_comments = get_reviews(pr["number"], pr["repo"])
     comments.extend(review_comments)
     comments.extend(get_commits(pr["number"], pr["repo"]))
     pr["approvals"] = ",".join(approvers)
+    pr["mergeable"] = _get_mergeable(pr["number"], pr["repo"])
     return pr, comments
 
 
