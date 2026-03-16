@@ -417,7 +417,7 @@ class GhMail(NavigationMixin, App):
         # Update subtitle when focus moves to a different table (tab key).
         if isinstance(focused, DataTable) and hasattr(self, "prs"):
             prs = self.prs.get(focused.id or "", [])
-            if focused.cursor_row < len(prs):
+            if 0 <= focused.cursor_row < len(prs):
                 self.sub_title = prs[focused.cursor_row]["title"]
 
     def action_cursor_down(self) -> None:
