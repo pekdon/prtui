@@ -217,10 +217,21 @@ def get_commits(pr_number, repo):
 
 
 def _get_mergeable(pr_number, repo):
-    """Return mergeable status (True/False/None) from the individual PR endpoint."""
-    resp = requests.get(f"{API}/repos/{repo}/pulls/{pr_number}", headers=HEADERS)
-    resp.raise_for_status()
-    return resp.json().get("mergeable")
+    """Return mergeable status (True/False/None) from the individual PR endpoint.
+
+    True only if GitHub says mergeable AND mergeable_state is not "blocked"
+    (blocked means e.g. codeowner approval is still required).
+    None means GitHub hasn't computed it yet.
+    """
+    data = requests.get(f"{API}/repos/{repo}/pulls/{pr_number}", headers=HEADERS)
+    data.raise_for_status()
+    data = data.json()
+    mergeable = data.get("mergeable")
+    if mergeable is None:
+        return None
+    if not mergeable:
+        return False
+    return data.get("mergeable_state") != "blocked"
 
 
 def _fetch_pr_details(pr):
