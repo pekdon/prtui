@@ -118,7 +118,7 @@ class HelpScreen(ModalScreen):
                 "  t             Open linked ticket in browser\n"
                 "\n"
                 "[b]Columns[/b]\n"
-                "  ✉ / 📭        Unread / read\n"
+                "  [red]●[/red] / [dim]●[/dim]         Unread / read\n"
                 "  App           Number of human approvals (✓ = you approved)\n"
                 "  CI            Jenkins approved\n"
                 "  Mrg           Mergeable (✓ = ready, ✗ = conflicts or blocked)\n"
