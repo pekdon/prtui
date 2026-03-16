@@ -91,6 +91,49 @@ class QuitScreen(ModalScreen[bool]):
             target.focus()
 
 
+class HelpScreen(ModalScreen):
+    """Keyboard shortcut reference."""
+    BINDINGS = [
+        Binding("escape", "dismiss", show=False),
+        Binding("q", "dismiss", show=False),
+        Binding("question_mark", "dismiss", show=False),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label("[b]prtui — keyboard shortcuts[/b]", id="help-title"),
+            Label(
+                "[b]Navigation[/b]\n"
+                "  j / k         Move cursor down / up\n"
+                "  Tab           Focus next table\n"
+                "  Shift+Tab     Focus previous table\n"
+                "\n"
+                "[b]Actions[/b]\n"
+                "  o             Open PR in browser\n"
+                "  c             Open comments panel\n"
+                "  r             Mark PR as read\n"
+                "  b             Open CI build in browser\n"
+                "  t             Open linked ticket in browser\n"
+                "\n"
+                "[b]Columns[/b]\n"
+                "  ✉ / 📭        Unread / read\n"
+                "  App           Number of human approvals (✓ = you approved)\n"
+                "  CI            Jenkins approved\n"
+                "  Mrg           Mergeable (✓ = ready, ✗ = conflicts or blocked)\n"
+                "\n"
+                "[b]Other[/b]\n"
+                "  ?             Show this help\n"
+                "  q             Quit",
+                id="help-body",
+            ),
+            Button("Close", variant="primary", id="help-close"),
+            id="help-dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss()
+
+
 class GhMail(NavigationMixin, App):
     CSS_PATH = "prtui.tcss"
 
@@ -104,6 +147,7 @@ class GhMail(NavigationMixin, App):
         Binding("b", "open_ci", "Open CI"),
         Binding("t", "open_ticket", "Open Ticket"),
         Binding("c", "open_comments", "Open Comments"),
+        Binding("question_mark", "help", "Help"),
         Binding("tab", "focus_next_table", "Next Table", show=True),
         Binding("shift+tab", "focus_prev_table", "Prev Table", show=True),
         Binding("j", "cursor_down", show=False),
@@ -371,6 +415,9 @@ class GhMail(NavigationMixin, App):
 
     def action_quit(self):
         self.push_screen(QuitScreen(), callback=self._handle_quit)
+
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen())
 
 if __name__ == "__main__":
     app = GhMail()

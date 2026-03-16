@@ -55,6 +55,30 @@ CollapsibleTitle:focus {
     background: $primary 20%;
 }
 
+/* Help dialog */
+HelpScreen {
+    align: center middle;
+}
+#help-dialog {
+    grid-size: 1;
+    grid-rows: auto 1fr auto;
+    grid-gutter: 1;
+    padding: 1 2;
+    width: 72;
+    height: auto;
+    max-height: 90%;
+    border: thick $background 80%;
+    background: $surface;
+}
+#help-title {
+    width: 1fr;
+    content-align: center middle;
+    padding-bottom: 1;
+}
+#help-body {
+    width: 1fr;
+}
+
 /* Quit dialog */
 QuitScreen {
     align: center middle;
