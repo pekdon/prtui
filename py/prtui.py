@@ -179,6 +179,7 @@ class GhMail(NavigationMixin, App):
         Binding("b", "open_ci", "Open CI"),
         Binding("t", "open_ticket", "Open Ticket"),
         Binding("c", "open_comments", "Open Comments"),
+        Binding("u", "refresh_pr", "Refresh PR"),
         Binding("question_mark", "help", "Help"),
         Binding("tab", "focus_next_table", "Next Table", show=True),
         Binding("shift+tab", "focus_prev_table", "Prev Table", show=True),
@@ -526,6 +527,27 @@ class GhMail(NavigationMixin, App):
             webbrowser.open(url)
         else:
             self.notify("No ticket found in title", severity="warning")
+
+    def action_refresh_pr(self) -> None:
+        key = self._selected_pr_key()
+        if not key:
+            return
+        repo, number = key
+        self.notify(f"Refreshing #{number}…")
+        def worker():
+            try:
+                ghapi.refresh_pr(repo, int(number))
+                self.prs = {
+                    "prs": store.get_pull_requests("mine"),
+                    "reviewer": store.get_pull_requests("reviewer"),
+                    "requested": store.get_pull_requests("requested"),
+                }
+                self.call_from_thread(self._populate_tables, True)
+                self.call_from_thread(self.notify, f"#{number} refreshed")
+            except Exception as e:
+                self.call_from_thread(self.notify, f"Refresh failed: {e}",
+                                      severity="error")
+        threading.Thread(target=worker, daemon=True).start()
 
     def _handle_quit(self, confirmed: bool) -> None:
         if confirmed:

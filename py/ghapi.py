@@ -327,3 +327,22 @@ def poll_for_updates(on_progress=None):
 
 if __name__ == "__main__":
     poll_for_updates(on_progress=print)
+
+
+def refresh_pr(repo, number):
+    """Force-refresh a single PR's details and comments in the DB."""
+    with prdb.connection() as cursor:
+        prdb.create_pr_table(cursor)
+        prdb.create_comments_table(cursor)
+        cursor.execute(
+            "SELECT number, repo, type, author, title, updated_at FROM PRS"
+            " WHERE repo=? AND number=?", (repo, number))
+        row = cursor.fetchone()
+    if not row:
+        return False
+    pr, comments = _fetch_pr_details(dict(row))
+    with prdb.connection() as cursor:
+        prdb.pr_insert(cursor, pr)
+        for comment in comments:
+            prdb.comment_insert(cursor, comment)
+    return True
