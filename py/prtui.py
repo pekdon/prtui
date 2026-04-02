@@ -244,17 +244,18 @@ class GhMail(NavigationMixin, App):
                                   severity="error")
 
     def _do_poll(self, preserve_focus=False):
-        """Run a poll and refresh tables if anything changed."""
-        changed = ghapi.poll_for_updates(
+        """Run a poll and refresh tables from DB (always reloads to catch changes from other instances)."""
+        ghapi.poll_for_updates(
             on_progress=lambda msg: self.call_from_thread(
                 self.notify, msg)
         )
-        if changed:
-            self.prs = {
-                "prs": store.get_pull_requests("mine"),
-                "reviewer": store.get_pull_requests("reviewer"),
-                "requested": store.get_pull_requests("requested"),
-            }
+        new_prs = {
+            "prs": store.get_pull_requests("mine"),
+            "reviewer": store.get_pull_requests("reviewer"),
+            "requested": store.get_pull_requests("requested"),
+        }
+        if new_prs != self.prs:
+            self.prs = new_prs
             self.call_from_thread(self._populate_tables, preserve_focus)
 
     def _poll_updates(self) -> None:
