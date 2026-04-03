@@ -354,6 +354,8 @@ class GhMail(NavigationMixin, App):
         # + column padding (8 cols × 2) + border/padding (4) ≈ 62
         title_width = max(20, self.size.width - 74)
 
+        cfg = config.read_config()
+        repo_name_map = cfg.get("repo-name-map")
         for table_id, prs in self.prs.items():
             table = self.query_one(f"#{table_id}", DataTable)
             table.clear(columns=True)
@@ -372,7 +374,7 @@ class GhMail(NavigationMixin, App):
                                   style="dim" if pr["state"] == "read" else "red")
                 cells = [
                     str(pr["number"]),
-                    pr["repo"],
+                    repo_name_map.get(pr["repo"], pr["repo"]),
                     pr["title"][:title_width] + ("…" if len(pr["title"]) > title_width else ""),
                     pr["author"][:15] + ("…" if len(pr["author"]) > 15 else ""),
                     approvals,

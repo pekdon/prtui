@@ -18,11 +18,16 @@ def read_config():
             cfg[key] = value
 
     repos = []
+    repo_name_map = {}
     for r in cfg.get("repos", "").split(","):
         r = r.strip()
+        if ':' in r:
+            [r, r_to] = r.split(':', 1)
+            repo_name_map[r] = r_to
         if r:
             repos.append(r)
     cfg["repos"] = repos
+    cfg["repo-name-map"] = repo_name_map
     cfg["jenkins-user"] = cfg.get("jenkins-user", "")
     cfg["auto-update"] = cfg.get("auto-update", "false").strip().lower() != "false"
 
